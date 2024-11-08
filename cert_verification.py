@@ -56,6 +56,7 @@ def validate_certificate_live(cert_to_verify_data, store):
         print(f"Certificate validation failed: {e}")
         return False
 
+
 def download_cer_certificate(url, output_file):
     """
     Download a .cer certificate from the specified URL and save it as a binary file.
@@ -144,7 +145,7 @@ def create_trust_store_from_directory(directory_path):
     return store
 
 
-def verify_certificate_file(cert_file, store):
+def validate_certificate_file(cert_file, store):
     """
     Verify a certificate against a given X509Store (trust store).
 
@@ -155,18 +156,23 @@ def verify_certificate_file(cert_file, store):
     Returns:
     - bool: True if verification succeeds, False otherwise.
     """
+
+    # Get the absolute path based on the current script's directory
+    file_path = os.path.join(os.path.dirname(__file__), cert_file)
+
+
     try:
-        with open(cert_file, "rb") as f:
+        with open(file_path, "rb") as f:
             cert_data = f.read()
             certificate = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data)
 
         # Create a certificate context and try to verify it
         store_ctx = crypto.X509StoreContext(store, certificate)
         store_ctx.verify_certificate()
-        print(f"Certificate {cert_file} verified successfully.")
+        print(f"Certificate {file_path} verified successfully.")
         return True
     except crypto.X509StoreContextError as e:
-        print(f"Certificate {cert_file} verification failed: {e}")
+        print(f"Certificate {file_path} verification failed: {e}")
         return False
 
 
@@ -185,4 +191,5 @@ if __name__ == "__main__":
 
     # Validate ad-hoc certificate as test
     validate_certificate_live(test_cert, trust_store)
+    validate_certificate_file("test_cert", trust_store)
 
