@@ -82,8 +82,6 @@ def verify_sn_pid(connection, new_hostname):
     - new_hostname (hostname): A string containing server hostname.
     """
     try:
-        # Invoke a shell session
-        # shell = new_client.invoke_shell()
 
         # Allow the shell to initialize (may need to wait a moment for prompt)
         time.sleep(2)
@@ -95,23 +93,15 @@ def verify_sn_pid(connection, new_hostname):
         # Read the output after sending the command
         output = connection.recv(1024).decode('utf-8')  # Adjust buffer size as needed
 
-        # print(output)
-
         # Ensure multiple lines of output are curated to one copy
         first_line = output.split('\r')[1]
 
         # Remove duplicate lines
         text_output = first_line.split(" SN:")
 
-        # print(text_output)
-
         # Curate SN and PID
         sudi_device_sn = text_output[-1]
         sudi_device_pid = text_output[0].split("PID:")[1]
-
-        # # Thread-safe print output
-        # with print_lock:
-        #     print(f"{new_hostname}---------------{sudi_device_pid} -------------------- {sudi_device_sn}")
 
         # Send Command
         connection.send("show license udi\n")
@@ -126,10 +116,6 @@ def verify_sn_pid(connection, new_hostname):
         # Curate "show license udi" SN, and PID
         license_device_pid = lines[1].split(',SN:')[0].split('PID:')[1]
         license_device_sn = lines[1].split(',SN:')[1]
-
-        # # Thread-safe print output
-        # with print_lock:
-        #     print(f"{new_hostname}---------------{license_device_pid} -------------------- {license_device_sn}")
 
         # Thread-safe print output
         with print_lock:
@@ -147,7 +133,7 @@ def verify_sn_pid(connection, new_hostname):
 
 def collect_cert(connection, new_hostname):
     """
-    Pulls trusted pki info, parses for SN and PID, then compares to sh version output
+    Pulls Certificate information from device "show platform..." output of cisco device
 
     This method uses "Invoke Shell" as there appears to be a bug with client.command_exec()
     with Cisco devices.  Only one command can be sent before the client disconnects with command_exec().
@@ -157,9 +143,6 @@ def collect_cert(connection, new_hostname):
     - new_hostname (hostname): A string containing server hostname.
     """
     try:
-        # Invoke a shell session
-        # shell = new_client.invoke_shell()
-
         # Allow the shell to initialize (may need to wait a moment for prompt)
         time.sleep(2)
 
@@ -208,7 +191,7 @@ def validate_certificate_live(cert_to_verify_data, store):
         return False
 
 
-def download_cer_certificate(url, output_file):
+def download_certificate(url, output_file):
     """
     Download a .cer certificate from the specified URL and save it as a binary file.
 
@@ -234,7 +217,7 @@ def download_cer_certificate(url, output_file):
 
 def extract_urls_from_page_and_download(url):
     """
-    Extract all URLs from the links in the specified HTML page.
+    Extract all URLs from the links in the specified HTML page, and download relevant certificates.
 
     Parameters:
     - url (str): The URL of the page to scrape.
@@ -254,7 +237,7 @@ def extract_urls_from_page_and_download(url):
         links = soup.find_all('a')
         for link in links:
             if link.get('href') and 'PEM' in link.text:
-                download_cer_certificate(link.get('href'), link.text)
+                download_certificate(link.get('href'), link.text)
         return
 
     except requests.RequestException as e:
@@ -298,7 +281,7 @@ def create_trust_store_from_directory(directory_path):
 
 def ssh_connect_and_execute(server):
     """
-    Connects to a server over SSH and executes a command.
+    Connects to a server over SSH and executes a command using invoke_shell.
 
     Parameters:
     - server (dict): A dictionary containing server connection details.
@@ -307,8 +290,6 @@ def ssh_connect_and_execute(server):
     username = "nstapp"
     password = "Cisco1234%67"
     software = server["Software"]
-
-    print("STARTED")
 
     try:
         # Initialize SSH client
@@ -326,10 +307,20 @@ def ssh_connect_and_execute(server):
             # Collect certificate from device for validation
             cert = collect_cert(shell, hostname)
 
-            # If Certificate is trusted, validate SN/PID
+            # Validate certificate trust path
             validate_certificate_live(cert, trust_store)
 
+            # Verify certificate details match device details
             verify_sn_pid(shell, hostname)
+
+        elif software == "NX-OS":
+            client.connect(hostname=hostname, username=username, password=password)
+            shell = client.invoke_shell()
+            # Thread-safe print output
+            with print_lock:
+                print(f"Connected to {hostname}")
+
+
 
     except Exception as e:
         with print_lock:
