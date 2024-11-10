@@ -313,14 +313,6 @@ def ssh_connect_and_execute(server):
             # Verify certificate details match device details
             verify_sn_pid(shell, hostname)
 
-        elif software == "NX-OS":
-            client.connect(hostname=hostname, username=username, password=password)
-            shell = client.invoke_shell()
-            # Thread-safe print output
-            with print_lock:
-                print(f"Connected to {hostname}")
-
-
 
     except Exception as e:
         with print_lock:
