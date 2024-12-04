@@ -191,5 +191,5 @@ if __name__ == "__main__":
 
     # Validate ad-hoc certificate as test
     validate_certificate_live(test_cert, trust_store)
-    validate_certificate_file("test_cert", trust_store)
+    # validate_certificate_file("test_cert", trust_store)
 

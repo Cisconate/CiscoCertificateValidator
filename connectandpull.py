@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from OpenSSL import crypto
 import os
 import csv
+# import logging
+# import snmp_poller
 
 test_cert = '''-----BEGIN CERTIFICATE-----
 MIIDeTCCAmGgAwIBAgIEAm7O9TANBgkqhkiG9w0BAQsFADAnMQ4wDAYDVQQKEwVD
@@ -37,7 +39,13 @@ urls = []
 trusted_cert_directory = "trusted_certs"
 trust_store = X509Store
 csv_file_path = "testinventory.csv"
+hosts = ("127.0.0.1",)
+# oids in group must be with same indexes
+oid_group = {"	1.3.6.1.4.1.9.2.1.3": "hostname",
+             "1.3.6.1.4.1.9.2.1.112": "envSerialNumber",
+             }
 
+community = "public"
 # Sample data: list of server information
 test_servers = [
     {"IP Address": "192.168.30.1", "username": "nstapp", "password": "Cisco1234%67", "Software": "IOS-XE"},
@@ -48,6 +56,18 @@ test_servers = [
 
 # Lock for thread-safe print statements
 print_lock = threading.Lock()
+
+# # create logger with 'spam_application'
+# logger = logging.getLogger('paramiko')
+# logger.setLevel(logging.DEBUG)
+# # create file handler which logs even debug messages
+# fh = logging.FileHandler('paramiko.log')
+# fh.setLevel(logging.DEBUG)
+# # create formatter and add it to the handlers
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# fh.setFormatter(formatter)
+# # add the handlers to the logger
+# logger.addHandler(fh)
 
 def import_inventory(csvfilepath):
     # Get the absolute path based on the current script's directory
@@ -296,9 +316,17 @@ def ssh_connect_and_execute(server):
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
+        # # # Poll SNMP Data and Print
+        # snmp_data = snmp_poller.poller(hosts, [list(oid_group)], community)
+        # with print_lock:
+        #     for d in snmp_data:
+        #         print("host=%s oid=%s.%s value=%s" % (d[0], oid_group[d[1]], d[2], d[3]))
+
         # Connect to the server
         if software == "IOS-XE":
-            client.connect(hostname=hostname, username=username, password=password)
+            client.connect(hostname=hostname, username=username, password=password, look_for_keys=False)
+            with print_lock:
+                print(f"started {hostname}")
             shell = client.invoke_shell()
             # Thread-safe print output
             with print_lock:
@@ -439,7 +467,7 @@ def main():
 
     # Extract and Download Trusted Root and Intermediate Certificates
     # Should be done intermittently to save on processing
-    extract_urls_from_page_and_download(page_url)
+    # extract_urls_from_page_and_download(page_url)
 
     # Create trust store for validating certificates later, only do this once
     trust_store = create_trust_store_from_directory(trusted_cert_directory)
