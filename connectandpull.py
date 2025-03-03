@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup
 from OpenSSL import crypto
 import os
 import csv
-# import logging
-# import snmp_poller
+import re
+import pollsnmp
 
 test_cert = '''-----BEGIN CERTIFICATE-----
 MIIDeTCCAmGgAwIBAgIEAm7O9TANBgkqhkiG9w0BAQsFADAnMQ4wDAYDVQQKEwVD
@@ -39,13 +39,10 @@ urls = []
 trusted_cert_directory = "trusted_certs"
 trust_store = X509Store
 csv_file_path = "testinventory.csv"
-hosts = ("127.0.0.1",)
-# oids in group must be with same indexes
-oid_group = {"	1.3.6.1.4.1.9.2.1.3": "hostname",
-             "1.3.6.1.4.1.9.2.1.112": "envSerialNumber",
-             }
+oid_group = [".1.3.6.1.4.1.9.9.25.1.1.1.2.7", #IOSXE/ISR
+             ".1.3.6.1.2.1.1.1.0"]   #ASA/FTD
 
-community = "public"
+community = "FedSecLab"
 # Sample data: list of server information
 test_servers = [
     {"IP Address": "192.168.30.1", "username": "nstapp", "password": "Cisco1234%67", "Software": "IOS-XE"},
@@ -56,18 +53,6 @@ test_servers = [
 
 # Lock for thread-safe print statements
 print_lock = threading.Lock()
-
-# # create logger with 'spam_application'
-# logger = logging.getLogger('paramiko')
-# logger.setLevel(logging.DEBUG)
-# # create file handler which logs even debug messages
-# fh = logging.FileHandler('paramiko.log')
-# fh.setLevel(logging.DEBUG)
-# # create formatter and add it to the handlers
-# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# fh.setFormatter(formatter)
-# # add the handlers to the logger
-# logger.addHandler(fh)
 
 def import_inventory(csvfilepath):
     # Get the absolute path based on the current script's directory
@@ -316,14 +301,8 @@ def ssh_connect_and_execute(server):
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        # # # Poll SNMP Data and Print
-        # snmp_data = snmp_poller.poller(hosts, [list(oid_group)], community)
-        # with print_lock:
-        #     for d in snmp_data:
-        #         print("host=%s oid=%s.%s value=%s" % (d[0], oid_group[d[1]], d[2], d[3]))
-
         # Connect to the server
-        if software == "IOS-XE":
+        if software == "IOSXE":
             client.connect(hostname=hostname, username=username, password=password, look_for_keys=False)
             with print_lock:
                 print(f"started {hostname}")
@@ -474,13 +453,17 @@ def main():
 
     # import Inventory to check
     inventory = import_inventory(csv_file_path)
+    # inventory = test_servers
 
+    # Shotgun SNMP all devices to determine known and compatible cisco devices for validation
+    updated_inventory = pollsnmp.main(inventory, community, oid_group)
+    print(updated_inventory)
     # Define the number of threads for the thread pool
-    max_threads = len(inventory)  # Adjust as needed
+    max_threads = len(updated_inventory)  # Adjust as needed
 
     # # Create a thread pool and connect to each server
     with ThreadPoolExecutor(max_threads) as executor:
-        executor.map(ssh_connect_and_execute, inventory)
+        executor.map(ssh_connect_and_execute, updated_inventory)
 
 
 if __name__ == "__main__":
