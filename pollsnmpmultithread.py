@@ -3,8 +3,11 @@ import re
 from pysnmp.hlapi.v3arch.asyncio import CommunityData, UdpTransportTarget,\
                          ContextData, ObjectType, ObjectIdentity, getCmd
 from pysnmp.entity.engine import SnmpEngine
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 search_terms= {"IOSXE","IOSD","FIREPOWER","ASA"}
+print_lock = threading.Lock()
 
 def search_for_OS(input_string, search_strings):
     """
@@ -43,13 +46,18 @@ def hex_to_readable(hex_string):
     :return: str, decoded readable text.
     """
     try:
-        # Remove the "0x" prefix if present
-        if hex_string.startswith("0x"):
-            hex_string = hex_string[2:]
 
-        # Decode the hex string
-        readable_text = bytes.fromhex(hex_string).decode("utf-8", errors="replace")
-        return readable_text
+        # Remove the "0x" prefix if present
+        if hex_string:
+            if hex_string.startswith("0x"):
+                hex_string = hex_string[2:]
+
+                # Decode the hex string
+                readable_text = bytes.fromhex(hex_string).decode("utf-8", errors="replace")
+                return readable_text
+
+        return "SNMP Timeout"
+
     except ValueError as e:
         return f"Error decoding hex string: Plain String is: {hex_string}"
 
@@ -76,7 +84,7 @@ async def get_snmp_data(ip, community, oid, port=161):
     errorIndication, errorStatus, errorIndex, varBinds = await iterator
 
     if errorIndication:
-        print(f"Error: {errorIndication}")
+        print(f"IP: {ip} Error: {errorIndication}")
         return None
     elif errorStatus:
         print(f"Error: {errorStatus.prettyPrint()} at {errorIndex and varBinds[int(errorIndex) - 1][0] or '?'}")
@@ -87,29 +95,39 @@ async def get_snmp_data(ip, community, oid, port=161):
             return varBind[1].prettyPrint()
 
 
-def poll_device(device_ip, community_string, cisco_sysDescr_oid):
-    cisco_sysDescr = asyncio.run(get_snmp_data(device_ip, community_string, cisco_sysDescr_oid))
+def poll_device(dictionary, community_string, cisco_sysdescr_oid_list):
+    device_ip = dictionary["IP Address"]
 
-    if cisco_sysDescr:
-        return(f"CW_SYSDESCR : {hex_to_readable(cisco_sysDescr)}")
-    else:
-        return("Failed to retrieve the CW_SYSDESCR data.")
+    for oid_item in cisco_sysdescr_oid_list:
+        cisco_sysDescr = asyncio.run(get_snmp_data(device_ip, community_string, oid_item))
 
+        # with print_lock:
+        #     print(f"\nDevice IP: {device_ip} cisco_sysDescr: {hex_to_readable(cisco_sysDescr)}")
+
+        if cisco_sysDescr:
+            os = search_for_OS(hex_to_readable(cisco_sysDescr), search_terms)
+
+            # with print_lock:
+            #     print(f"\nDevice IP: {device_ip} Os: {os}")
+
+            dictionary.update({"Software": os})
+            return dictionary
+
+    dictionary.update({"Software":"UNKNOWN"})
+    return dictionary
 
 def main(olddictionary, comm_string, oid_list):
+
     newdict=olddictionary
 
-    for device in newdict:
-        for item in oid_list:
-            ip = device["IP Address"]
-            value = poll_device(ip, comm_string, item)
-            if value != "Failed to retrieve the CW_SYSDESCR data.":
-                break
-
-        os = search_for_OS(value, search_terms)
-
-        device.update({"Software":os})
-
+    # Define the number of threads for the thread pool
+    max_threads = len(newdict)  # Adjust as needed
+    # print(f"\nNew Dict Before: {newdict}")
+    # Create a thread pool and connect to each server
+    with ThreadPoolExecutor(max_threads) as executor:
+        newdict = executor.map(lambda x: poll_device(x, comm_string, oid_list), newdict)
+    # for result in newdict:
+    #     print(f"\nNew Dict After: {result}")
     return newdict
 
 if __name__ == "__main__":

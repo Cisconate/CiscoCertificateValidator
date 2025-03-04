@@ -10,6 +10,7 @@ import os
 import csv
 import re
 import pollsnmp
+import pollsnmpmultithread
 
 test_cert = '''-----BEGIN CERTIFICATE-----
 MIIDeTCCAmGgAwIBAgIEAm7O9TANBgkqhkiG9w0BAQsFADAnMQ4wDAYDVQQKEwVD
@@ -50,6 +51,7 @@ test_servers = [
     {"IP Address": "192.168.30.3", "username": "nstapp", "password": "Cisco1234%67", "Software": "ASA"},
     {"IP Address": "192.168.30.74", "username": "nstapp", "password": "Cisco1234%67", "Software": "IOS-XE"}
 ]
+connect_dict = []
 
 # Lock for thread-safe print statements
 print_lock = threading.Lock()
@@ -288,6 +290,9 @@ def ssh_connect_and_execute(server):
     """
     Connects to a server over SSH and executes a command using invoke_shell.
 
+    This method uses "Invoke Shell" as there appears to be a bug with client.command_exec()
+    with Cisco devices.  Only one command can be sent before the client disconnects with command_exec().
+
     Parameters:
     - server (dict): A dictionary containing server connection details.
     """
@@ -456,14 +461,19 @@ def main():
     # inventory = test_servers
 
     # Shotgun SNMP all devices to determine known and compatible cisco devices for validation
-    updated_inventory = pollsnmp.main(inventory, community, oid_group)
-    print(updated_inventory)
-    # Define the number of threads for the thread pool
-    max_threads = len(updated_inventory)  # Adjust as needed
+    # updated_inventory = pollsnmp.main(inventory, community, oid_group)
+    updated_inventory = pollsnmpmultithread.main(inventory, community, oid_group)
 
-    # # Create a thread pool and connect to each server
+    # Convert iterator response back to a list of dictionaries, since rest of code written this way
+    for result in updated_inventory:
+        connect_dict.append(result)
+
+    # Define the number of threads for the thread pool
+    max_threads = len(connect_dict)  # Adjust as needed
+
+    # Create a thread pool and connect to each server
     with ThreadPoolExecutor(max_threads) as executor:
-        executor.map(ssh_connect_and_execute, updated_inventory)
+        executor.map(ssh_connect_and_execute, connect_dict)
 
 
 if __name__ == "__main__":
