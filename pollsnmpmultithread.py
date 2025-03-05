@@ -11,8 +11,8 @@ print_lock = threading.Lock()
 
 def search_for_OS(input_string, search_strings):
     """
-    Searches for a set of strings within raw string.  wasteful but no common syntax, and this is the first point
-    of determination...
+    Searches for a set of strings (known recognized OS's) within raw string and
+    returns the match, if any...
 
     Parameters:
         input_string (str): The string to search.
@@ -39,8 +39,8 @@ def hex_to_readable(hex_string):
     """
     Convert a hexadecimal-encoded string to readable text.
 
-    Cisco SNMP reponses are inconsistent between product lines.  Some respond with Hex some resond with ASCII.
-    Hence we attempt to convert, and if that fails, return original text.
+    Cisco SNMP responses are inconsistent between product lines.  Some respond with Hex some respond with ASCII.
+    Hence we attempt to convert, and if that fails, return original text in hopes that it is plaintext.
 
     :param hex_string: str, hexadecimal string, optionally prefixed with "0x".
     :return: str, decoded readable text.
@@ -65,11 +65,11 @@ def hex_to_readable(hex_string):
 async def get_snmp_data(ip, community, oid, port=161):
     """
     Poll an SNMP device and fetch data for a given OID.
-    :param ip: IP address of the device
-    :param community: SNMP community string
-    :param oid: SNMP OID to query
-    :param port: SNMP port (default: 161)
-    :return: SNMP response data or None if failed
+    :param ip: str, IP address of the device
+    :param community: str, SNMP community string
+    :param oid: str, SNMP OID to query
+    :param port: int, SNMP port (default: 161)
+    :return: str, SNMP response data or None if failed
     """
     snmpEngine = SnmpEngine()
 
@@ -96,19 +96,26 @@ async def get_snmp_data(ip, community, oid, port=161):
 
 
 def poll_device(dictionary, community_string, cisco_sysdescr_oid_list):
+    """
+    SNMP Polls the IP Address of the device provided in the dictionary.  Currently a dictionary because
+    no optimization has been made, would be more efficient to use just Device IP and update with software.
+    then use Device IP as the Primary Key for joining/updating the device dictionary with software.
+    Iterates over each known OID for CiscoSysDescr since we dont know what device we are dealing with
+    until a match is found and the data retrieved.
+
+    :param dictionary: dictionary, Device list and attributes
+    :param community_string: str, SNMP community string
+    :param cisco_sysdescr_oid_list: list, List of SNMP OID's to query
+    :return: dictionaary
+    """
+
     device_ip = dictionary["IP Address"]
 
     for oid_item in cisco_sysdescr_oid_list:
         cisco_sysDescr = asyncio.run(get_snmp_data(device_ip, community_string, oid_item))
 
-        # with print_lock:
-        #     print(f"\nDevice IP: {device_ip} cisco_sysDescr: {hex_to_readable(cisco_sysDescr)}")
-
         if cisco_sysDescr:
             os = search_for_OS(hex_to_readable(cisco_sysDescr), search_terms)
-
-            # with print_lock:
-            #     print(f"\nDevice IP: {device_ip} Os: {os}")
 
             dictionary.update({"Software": os})
             return dictionary
@@ -116,18 +123,28 @@ def poll_device(dictionary, community_string, cisco_sysdescr_oid_list):
     dictionary.update({"Software":"UNKNOWN"})
     return dictionary
 
+
 def main(olddictionary, comm_string, oid_list):
+    """
+    This function Initiate a multi-threaded SNMP poll.  The SNMP Poll itself manages the ASYNC function of polling
+    Lambda x allows the function to iterate over ONLY the dictionary, while the rest of the variables
+    remain constant.
+
+    :param olddictionary: list, list of dictionary items
+    :param comm_string: str, SNMP Community string
+    :param oid_list: list, List of SNMP OID's to query
+    :return: dictionary, list of dictionary with devices and attributes
+    """
 
     newdict=olddictionary
 
     # Define the number of threads for the thread pool
     max_threads = len(newdict)  # Adjust as needed
-    # print(f"\nNew Dict Before: {newdict}")
+
     # Create a thread pool and connect to each server
     with ThreadPoolExecutor(max_threads) as executor:
         newdict = executor.map(lambda x: poll_device(x, comm_string, oid_list), newdict)
-    # for result in newdict:
-    #     print(f"\nNew Dict After: {result}")
+
     return newdict
 
 if __name__ == "__main__":

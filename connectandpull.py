@@ -451,14 +451,13 @@ def main():
 
     # Extract and Download Trusted Root and Intermediate Certificates
     # Should be done intermittently to save on processing
-    # extract_urls_from_page_and_download(page_url)
+    extract_urls_from_page_and_download(page_url)
 
     # Create trust store for validating certificates later, only do this once
     trust_store = create_trust_store_from_directory(trusted_cert_directory)
 
     # import Inventory to check
     inventory = import_inventory(csv_file_path)
-    # inventory = test_servers
 
     # Shotgun SNMP all devices to determine known and compatible cisco devices for validation
     # updated_inventory = pollsnmp.main(inventory, community, oid_group)
